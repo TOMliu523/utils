@@ -28,7 +28,7 @@ struct ring_spsc *ring_spsc_init(int cap)
     memset(ring, 0, total);
 
     ring->cap = cap;
-    ring->mask = cap;
+    ring->mask = cap - 1;
     ring->head = 0;
     ring->tail = 0;
 

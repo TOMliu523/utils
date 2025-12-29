@@ -95,6 +95,7 @@ extern void ring_spsc_fini(struct ring_spsc *ring);
 
 static INLINE int ring_spsc_write(struct ring_spsc *ring, void *data[], int nums)
 {
+    uint32_t top = 0;
     uint32_t diff = 0;
     uint32_t real = 0;
     uint32_t head = 0;
@@ -111,9 +112,10 @@ static INLINE int ring_spsc_write(struct ring_spsc *ring, void *data[], int nums
     }
 
     diff = ring->cap - (head & ring->mask);
-    memcpy(&ring->data[head & ring->mask], data, diff * sizeof(void*));
-    if (real > diff) {
-        memcpy(&ring->data[0], &data[diff], (real - diff) * sizeof(void *));
+    top = MIN(diff, real);
+    memcpy(&ring->data[head & ring->mask], data, top * sizeof(void*));
+    if (real > top) {
+        memcpy(&ring->data[0], &data[top], (real - top) * sizeof(void *));
     }
 
     __atomic_store_n(&ring->head, head + real, __ATOMIC_RELEASE);
@@ -122,6 +124,7 @@ static INLINE int ring_spsc_write(struct ring_spsc *ring, void *data[], int nums
 
 static INLINE int ring_spsc_read(struct ring_spsc *ring, void *data[], int max)
 {
+    uint32_t top = 0;
     uint32_t diff = 0;
     uint32_t real = 0;
     uint32_t head = 0;
@@ -138,9 +141,11 @@ static INLINE int ring_spsc_read(struct ring_spsc *ring, void *data[], int max)
     }
 
     diff = ring->cap - (tail & ring->mask);
-    memcpy(data, &ring->data[tail & ring->mask], diff * sizeof(void *));
-    if (real > diff) {
-        memcpy(&data[tail & ring->mask], &ring->data[0], (real - diff) * sizeof(void *));
+    top = MIN(real, diff);
+
+    memcpy(data, &ring->data[tail & ring->mask], top * sizeof(void *));
+    if (real > top) {
+        memcpy(&data[top], &ring->data[0], (real - top) * sizeof(void *));
     }
 
     __atomic_store_n(&ring->tail, tail + real, __ATOMIC_RELEASE);
@@ -186,7 +191,25 @@ static INLINE int ring_spsc_read(struct ring_spsc *ring, void *data[], int max)
  *  - CAS contention can be reduced by batching and by using per-NUMA rings if needed.
  *  - Do NOT attempt to extend an SPSC algorithm to MPMC by merely making head/tail atomic; it will break.
  */
+struct writer {
+    uint32_t head;
+    uint32_t tail;
+} ALIGNED(CACHE_LINE);
 
+struct reader {
+    uint32_t head;
+    uint32_t tail;
+} ALIGNED(CACHE_LINE);
+
+struct ring_mpmc {
+    uint32_t cap;
+    uint32_t mask;
+
+    struct writer writer;
+    struct reader reader;
+
+    void *data[];
+};
 
 /*
  * Lock-free ring: Single Writer + Multiple Readers with ordered consumption (SPMR-Ordered)
@@ -230,5 +253,20 @@ static INLINE int ring_spsc_read(struct ring_spsc *ring, void *data[], int max)
  *  - Consider cache-line padding for each read_pos[role] to avoid false sharing among readers.
  *  - This pattern preserves per-role in-order processing without locks.
  */
+struct role {
+    uint32_t cursor;
+} ALIGNED(CACHE_LINE);
+
+struct ring_spmro {
+    uint32_t cap;
+    uint32_t mask;
+    int n_role;
+
+    ALIGNED(CACHE_LINE) uint32_t head;
+    struct role *role;
+    struct role last_role;
+
+    void *data[];
+};
 
 #endif // __RING_H__

@@ -102,6 +102,20 @@ struct ring_spsc {
 extern struct ring_spsc *ring_spsc_init(int cap);
 extern void ring_spsc_fini(struct ring_spsc *ring);
 
+/*
+ * ring_spsc_write
+ *
+ * Producer-side enqueue operation.
+ *
+ * Semantics:
+ *  - Attempts to write up to 'nums' elements.
+ *  - Returns the actual number written (may be less).
+ *
+ * Concurrency:
+ *  - Called ONLY by the producer thread.
+ *  - Reads tail with ACQUIRE to observe freed slots.
+ *  - Publishes head with RELEASE after data is written.
+ */
 static INLINE int ring_spsc_write(struct ring_spsc *ring, void *data[], int nums)
 {
     uint32_t top = 0;
@@ -131,6 +145,20 @@ static INLINE int ring_spsc_write(struct ring_spsc *ring, void *data[], int nums
     return real;
 }
 
+/*
+ * ring_spsc_read
+ *
+ * Consumer-side dequeue operation (copying version).
+ *
+ * Semantics:
+ *  - Attempts to read up to 'max' elements.
+ *  - Copies pointers into the user-provided array.
+ *
+ * Concurrency:
+ *  - Called ONLY by the consumer thread.
+ *  - Loads head with ACQUIRE to synchronize with producer.
+ *  - Publishes updated tail with RELEASE.
+ */
 static INLINE int ring_spsc_read(struct ring_spsc *ring, void *data[], int max)
 {
     uint32_t top = 0;
@@ -161,6 +189,24 @@ static INLINE int ring_spsc_read(struct ring_spsc *ring, void *data[], int max)
     return real;
 }
 
+/*
+ * ring_spsc_read_start
+ *
+ * Zero-copy read preparation.
+ *
+ * Semantics:
+ *  - Computes the contiguous readable regions in the ring.
+ *  - Returns up to two spans (p1 / p2) to handle wrap-around.
+ *  - Does NOT modify ring state.
+ *
+ * Synchronization:
+ *  - Loads head with ACQUIRE to observe producer writes.
+ *  - Does NOT publish tail; caller must commit explicitly.
+ *
+ * Usage contract:
+ *  - Caller must call ring_spsc_read_commit() after consuming data.
+ *  - Between start and commit, no other read operation is allowed.
+ */
 static INLINE void ring_spsc_read_start(struct ring_spsc *ring, struct ring_span *span)
 {
     uint32_t idx = 0;
@@ -173,7 +219,7 @@ static INLINE void ring_spsc_read_start(struct ring_spsc *ring, struct ring_span
     head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
 
     remain = head - tail;
-    idx = head & ring->mask;
+    idx = tail & ring->mask;
     top = MIN(ring->cap - idx, remain);
 
     span->p1 = &ring->data[idx];
@@ -189,6 +235,18 @@ static INLINE void ring_spsc_read_start(struct ring_spsc *ring, struct ring_span
     span->total = span->count1 + span->count2;
 }
 
+/*
+ * ring_spsc_read_commit
+ *
+ * Finalizes a zero-copy read operation.
+ *
+ * Semantics:
+ *  - Advances tail by span->total.
+ *  - Uses RELEASE store to make consumed slots visible to producer.
+ *
+ * Concurrency:
+ *  - Called ONLY by the consumer thread.
+ */
 static INLINE void ring_spsc_read_commit(struct ring_spsc *ring, const struct ring_span *span)
 {
     uint32_t tail = ring->tail;

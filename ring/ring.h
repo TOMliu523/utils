@@ -49,53 +49,127 @@
 #define UNLIKELY(x) __builtin_expect(!!(x), 0)
 #endif // LIKELY
 
+/*
+ * ring_span
+ *
+ * Describes a zero-copy readable span returned by ring_spsc_read_start().
+ *
+ * Purpose:
+ *  - Expose the currently available contiguous elements in the ring buffer
+ *    without copying data into a temporary array.
+ *  - Handles wrap-around by splitting the readable region into up to two parts.
+ *
+ * Layout:
+ *  - The logical readable range is [tail, head).
+ *  - Because the ring is circular, this range may wrap around the end of
+ *    the underlying array.
+ *
+ * Fields:
+ *  - p1 / count1:
+ *      First contiguous segment of readable pointers.
+ *      Always points into ring->data at index (tail & mask).
+ *
+ *  - p2 / count2:
+ *      Second contiguous segment (only valid if wrap-around occurs).
+ *      Points to ring->data[0].
+ *      If no wrap-around is needed, p2 is NULL and count2 is 0.
+ *
+ *  - total:
+ *      Total number of readable elements.
+ *      Defined as count1 + count2.
+ *
+ * Usage contract:
+ *  - The consumer must NOT modify ring state between read_start and read_commit.
+ *  - After consuming the elements described by this span, the consumer
+ *    must call ring_spsc_read_commit() to advance the tail index.
+ *
+ * Concurrency:
+ *  - Valid only for the single consumer thread.
+ *  - Data pointed to by p1/p2 is stable until read_commit() is called.
+ */
 struct ring_span {
-    void **p1;
-    uint32_t count1;
-    void **p2;
-    uint32_t count2;
-    uint32_t total;
+    void **p1;        // First contiguous segment of readable entries
+    uint32_t count1;  // Number of entries in the first segment
+
+    void **p2;        // Second segment (wrap-around), or NULL if not used
+    uint32_t count2;  // Number of entries in the second segment
+
+    uint32_t total;   // Total readable entries: count1 + count2
 };
 
 /*
- * Lock-free SPSC ring (Single Producer / Single Consumer)
+ * Lock-free SPSC ring buffer (Single Producer / Single Consumer)
  *
- * Goal:
- *  - Exactly one writer thread (producer) and one reader thread (consumer)
- *  - No locks, no CAS, only atomic loads/stores with proper memory ordering
+ * Design goal:
+ *  - Exactly ONE producer thread and ONE consumer thread.
+ *  - Fully lock-free: no mutex, no spinlock, no CAS.
+ *  - Synchronization is achieved solely via atomic loads/stores
+ *    with carefully chosen memory ordering.
  *
- * Structure / invariants:
- *  - Capacity (cap) must be a power of two; mask = cap - 1 is used for fast wrap-around.
- *  - 'head' is written ONLY by the producer.
- *  - 'tail' is written ONLY by the consumer.
- *    => Because each index has a single writer, we do not need compare-and-swap.
+ * Core idea:
+ *  - 'head' index is written ONLY by the producer.
+ *  - 'tail' index is written ONLY by the consumer.
+ *  - Each index has a single writer => no need for compare-and-swap.
  *
- * Concurrency & memory ordering:
- *  - Producer:
- *      1) Writes elements into ring->data[head ...].
- *      2) Publishes the new head with a RELEASE store.
- *    The RELEASE ensures that all element writes become visible before head is observed by the consumer.
+ * Ring layout:
+ *  - Capacity (cap) must be a power of two.
+ *  - mask = cap - 1 enables fast wrap-around using bitwise AND.
+ *  - Data array stores pointers (void *).
  *
- *  - Consumer:
- *      1) Reads head with an ACQUIRE load.
- *         ACQUIRE pairs with producer's RELEASE so the consumer sees the element writes.
- *      2) Reads elements from ring->data[tail ...].
- *      3) Publishes the new tail with a RELEASE store.
+ * Index semantics:
+ *  - head: next position to be written by producer (monotonically increasing).
+ *  - tail: next position to be read by consumer (monotonically increasing).
+ *  - Valid data range is [tail, head).
  *
- *  - Producer reads tail with an ACQUIRE load to observe freed slots before writing new elements.
+ * Memory ordering & correctness:
  *
- * Notes:
- *  - This design is safe only for 1P/1C. Adding more producers or consumers requires a different algorithm.
- *  - Prefer padding head/tail to separate cache lines to avoid false sharing.
+ *  Producer side:
+ *    1) Writes elements into ring->data[head ...].
+ *    2) Publishes the updated head using a RELEASE store.
+ *
+ *    The RELEASE store guarantees:
+ *      - All prior writes to ring->data become visible
+ *        before the new head value is observed by the consumer.
+ *
+ *  Consumer side:
+ *    1) Loads head using an ACQUIRE load.
+ *       - This pairs with the producer's RELEASE store.
+ *       - Ensures the consumer sees fully written elements.
+ *    2) Reads elements from ring->data[tail ...].
+ *    3) Publishes the updated tail using a RELEASE store.
+ *
+ *  Producer observing consumer progress:
+ *    - Producer loads tail using an ACQUIRE load.
+ *    - This ensures the producer sees the consumer's RELEASE store
+ *      and therefore knows which slots are free.
+ *
+ * Why this is safe without CAS:
+ *  - head is written by producer only.
+ *  - tail is written by consumer only.
+ *  - Cross-thread visibility is guaranteed by ACQUIRE/RELEASE pairs.
+ *
+ * Performance notes:
+ *  - head and tail are cache-line aligned to avoid false sharing.
+ *  - No atomic RMW instructions => very low contention and high throughput.
+ *
+ * Limitations:
+ *  - This algorithm is valid ONLY for single-producer / single-consumer.
+ *  - Using it with multiple producers or consumers will cause data races.
+ *
+ * Extensions:
+ *  - For MPSC/MPMC, a different algorithm (CAS or ticket-based) is required.
  */
-
 struct ring_spsc {
-    uint32_t cap;
-    uint32_t mask;
+    uint32_t cap;      // Ring capacity (must be power of two)
+    uint32_t mask;     // cap - 1, used for index wrap-around
 
+    // Written ONLY by producer, read by consumer
     ALIGNED(CACHE_LINE) uint32_t head;
+
+    // Written ONLY by consumer, read by producer
     ALIGNED(CACHE_LINE) uint32_t tail;
 
+    // Flexible array member holding pointers to user data
     void *data[];
 };
 

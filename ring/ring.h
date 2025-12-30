@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <stdbool.h>
 
 #ifndef MIN
 #define MIN(x, y) \
@@ -211,6 +212,103 @@ struct ring_mpmc {
     void *data[];
 };
 
+extern struct ring_mpmc *ring_mpmc_init(int cap);
+extern void ring_mpmc_fini(struct ring_mpmc *);
+
+static INLINE int ring_mpmc_write(struct ring_mpmc *ring, void *data[], int nums)
+{
+    uint32_t idx = 0;
+    uint32_t real = 0;
+    uint32_t head = 0;
+    uint32_t tail = 0;
+    uint32_t first = 0;
+    uint32_t start = 0;
+    uint32_t remain = 0;
+
+    do {
+        head = __atomic_load_n(&ring->writer.head, __ATOMIC_RELAXED);
+        tail = __atomic_load_n(&ring->reader.tail, __ATOMIC_ACQUIRE);
+
+        remain = ring->cap - (head - tail);
+        real = MIN(remain, nums);
+
+        if (real == 0) {
+            return 0;
+        }
+
+        start = head;
+    } while (!__atomic_compare_exchange_n(&ring->writer.head,
+                                          &start,
+                                          head + real,
+                                          true,
+                                          __ATOMIC_ACQ_REL,
+                                          __ATOMIC_RELAXED));
+
+    idx = head & ring->mask;
+    first = MIN(ring->cap - idx, real);
+
+    memcpy(&ring->data[idx], data, first * sizeof(void *));
+    if (real > first) {
+        memcpy(&ring->data[0], &data[first], (real - first) * sizeof(void *));
+    }
+
+    for (;;) {
+        start = head;
+        if (__atomic_compare_exchange_n(&ring->writer.tail, &start, head + real, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+            break;
+        }
+
+        __builtin_ia32_pause();
+    }
+
+    return real;
+}
+
+static INLINE int ring_mpmc_read(struct ring_mpmc *ring, void *data[], int max)
+{
+    uint32_t idx = 0;
+    uint32_t real = 0;
+    uint32_t head = 0;
+    uint32_t tail = 0;
+    uint32_t first = 0;
+    uint32_t start = 0;
+
+    do {
+        head = __atomic_load_n(&ring->reader.head, __ATOMIC_RELAXED);
+        tail = __atomic_load_n(&ring->writer.tail, __ATOMIC_ACQUIRE);
+
+        real = MIN(tail - head, max);
+        if (real == 0) {
+            return 0;
+        }
+
+        start = head;
+    } while (!__atomic_compare_exchange_n(&ring->reader.head,
+                                          &start,
+                                          head + real,
+                                          true,
+                                          __ATOMIC_ACQ_REL,
+                                          __ATOMIC_RELAXED));
+
+    idx = head & ring->mask;
+    first = MIN(ring->cap - idx, real);
+    memcpy(&data[0], &ring->data[idx], first * sizeof(void *));
+    if (real > first) {
+        memcpy(&data[first], &ring->data[0], (real - first) * sizeof(void *));
+    }
+
+    for (;;) {
+        start = head;
+        if (__atomic_compare_exchange_n(&ring->reader.tail, &start, head + real, true, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+            break;
+        }
+
+        __builtin_ia32_pause();
+    }
+
+    return real;
+}
+
 /*
  * Lock-free ring: Single Writer + Multiple Readers with ordered consumption (SPMR-Ordered)
  *
@@ -264,9 +362,58 @@ struct ring_spmro {
 
     ALIGNED(CACHE_LINE) uint32_t head;
     struct role *role;
-    struct role last_role;
 
     void *data[];
 };
+
+extern struct ring_spmro *ring_spmro_init(int cap, int role_nums);
+extern void ring_spmro_fini(struct ring_spmro *);
+
+static INLINE int ring_spmro_write(struct ring_spmro *ring, void *data[], int nums)
+{
+    uint32_t idx = 0;
+    uint32_t head = 0;
+    uint32_t tail = 0;
+    uint32_t real = 0;
+    uint32_t first = 0;
+
+    head = ring->head;
+    tail = __atomic_load_n(&ring->role[ring->n_role - 1].cursor, __ATOMIC_ACQUIRE);
+    real = MIN(ring->cap - (head - tail), nums);
+    if (real == 0) {
+        return 0;
+    }
+
+    idx = head & ring->mask;
+    first = MIN(ring->cap - idx, real);
+    memcpy(&ring->data[idx], &data[0], first * sizeof(void *));
+    if (real > first) {
+        memcpy(&ring->data[0], &data[first], (real - first) * sizeof(void *));
+    }
+
+    __atomic_store_n(&ring->head, head + real, __ATOMIC_RELEASE);
+    return real;
+}
+
+static INLINE int ring_spmro_read(struct ring_spmro *ring, int id, void *data[], int max)
+{
+    uint32_t idx = 0;
+    uint32_t cur = 0;
+    uint32_t prev = 0;
+    uint32_t real = 0;
+    uint32_t first = 0;
+
+    cur = ring->role[id].cursor;
+    prev = __atomic_load_n((id == 0) ? &ring->head : &ring->role[id - 1].cursor, __ATOMIC_ACQUIRE);
+    real = MIN(prev - cur, max);
+    if (real == 0) {
+        return 0;
+    }
+
+    idx = cur & ring->mask;
+    first = (ring->cap -  idx, );
+
+    return 0;
+}
 
 #endif // __RING_H__

@@ -371,7 +371,6 @@ static void *task_recv_rand(void *arg)
     int total = 0;
     uint64_t t = 0;
     uint32_t i = 0;
-    uint32_t max = 0;
     struct timespec end = {0};
     struct timespec start = {0};
     int read_rand_arr[32] = {0};

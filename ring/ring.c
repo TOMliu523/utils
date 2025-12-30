@@ -21,7 +21,7 @@ struct ring_spsc *ring_spsc_init(int cap)
 
     total = sizeof(struct ring_spsc) + cap * sizeof(void *);
     ret = posix_memalign((void **)&ring, CACHE_LINE, total);
-    if (LIKELY(ret != 0)) {
+    if (UNLIKELY(ret != 0)) {
         return NULL;
     }
 
@@ -55,7 +55,7 @@ struct ring_mpmc *ring_mpmc_init(int cap)
     }
 
     total = sizeof(struct ring_mpmc) + sizeof(void *) * cap;
-    ret = posix_memalign((void **)&ring, total, CACHE_LINE);
+    ret = posix_memalign((void **)&ring, CACHE_LINE, total);
     if (UNLIKELY(ret != 0)) {
         return NULL;
     }
@@ -87,7 +87,7 @@ struct ring_spmro *ring_spmro_init(int cap, int role_nums)
         return NULL;
     }
 
-    total = sizeof(struct ring_spmro) + sizeof(void *) * total;
+    total = sizeof(struct ring_spmro) + sizeof(void *) * cap;
     ret = posix_memalign((void **)&ring, CACHE_LINE, total);
     if (UNLIKELY(ret != 0)) {
         return NULL;
@@ -95,13 +95,13 @@ struct ring_spmro *ring_spmro_init(int cap, int role_nums)
 
     memset(ring, 0, total);
 
-    ret = posix_memalign((void **)&ring->role, CACHE_LINE, role_nums * sizeof(struct role));
+    ret = posix_memalign((void **)&ring->roles, CACHE_LINE, role_nums * sizeof(struct role));
     if (UNLIKELY(ret != 0)) {
         free(ring);
         return NULL;
     }
 
-    memset(ring->role, 0, role_nums * sizeof(struct role));
+    memset(ring->roles, 0, role_nums * sizeof(struct role));
 
     ring->cap = cap;
     ring->mask = cap - 1;
@@ -116,6 +116,6 @@ void ring_spmro_fini(struct ring_spmro *ring)
         return;
     }
 
-    free(ring->role);
+    free(ring->roles);
     free(ring);
 }

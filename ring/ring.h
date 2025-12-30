@@ -25,7 +25,7 @@
     ({ \
         typeof(x) _x = (x); \
         typeof(y) _y = (y); \
-        _x > _y ? _x ? _y; \
+        _x > _y ? _x : _y; \
     })
 #endif // MAX
 
@@ -48,6 +48,14 @@
 #ifndef UNLIKELY
 #define UNLIKELY(x) __builtin_expect(!!(x), 0)
 #endif // LIKELY
+
+struct ring_span {
+    void **p1;
+    uint32_t count1;
+    void **p2;
+    uint32_t count2;
+    uint32_t total;
+};
 
 /*
  * Lock-free SPSC ring (Single Producer / Single Consumer)
@@ -82,8 +90,8 @@
  */
 
 struct ring_spsc {
-    int cap;
-    int mask;
+    uint32_t cap;
+    uint32_t mask;
 
     ALIGNED(CACHE_LINE) uint32_t head;
     ALIGNED(CACHE_LINE) uint32_t tail;
@@ -151,6 +159,40 @@ static INLINE int ring_spsc_read(struct ring_spsc *ring, void *data[], int max)
 
     __atomic_store_n(&ring->tail, tail + real, __ATOMIC_RELEASE);
     return real;
+}
+
+static INLINE void ring_spsc_read_start(struct ring_spsc *ring, struct ring_span *span)
+{
+    uint32_t idx = 0;
+    uint32_t top = 0;
+    uint32_t tail = 0;
+    uint32_t head = 0;
+    uint32_t remain = 0;
+
+    tail = ring->tail;
+    head = __atomic_load_n(&ring->head, __ATOMIC_ACQUIRE);
+
+    remain = head - tail;
+    idx = head & ring->mask;
+    top = MIN(ring->cap - idx, remain);
+
+    span->p1 = &ring->data[idx];
+    span->count1 = top;
+    if (remain > top) {
+        span->p2 = &ring->data[0];
+        span->count2 = remain - top;
+    } else {
+        span->p2 = NULL;
+        span->count2 = 0;
+    }
+
+    span->total = span->count1 + span->count2;
+}
+
+static INLINE void ring_spsc_read_commit(struct ring_spsc *ring, const struct ring_span *span)
+{
+    uint32_t tail = ring->tail;
+    __atomic_store_n(&ring->tail, tail + span->total, __ATOMIC_RELEASE);
 }
 
 /*
@@ -254,7 +296,7 @@ static INLINE int ring_mpmc_write(struct ring_mpmc *ring, void *data[], int nums
 
     for (;;) {
         start = head;
-        if (__atomic_compare_exchange_n(&ring->writer.tail, &start, head + real, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
+        if (__atomic_compare_exchange_n(&ring->writer.tail, &start, head + real, true, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) {
             break;
         }
 
@@ -361,7 +403,7 @@ struct ring_spmro {
     int n_role;
 
     ALIGNED(CACHE_LINE) uint32_t head;
-    struct role *role;
+    struct role *roles;
 
     void *data[];
 };
@@ -377,8 +419,8 @@ static INLINE int ring_spmro_write(struct ring_spmro *ring, void *data[], int nu
     uint32_t real = 0;
     uint32_t first = 0;
 
-    head = ring->head;
-    tail = __atomic_load_n(&ring->role[ring->n_role - 1].cursor, __ATOMIC_ACQUIRE);
+    head = __atomic_load_n(&ring->head, __ATOMIC_RELAXED);
+    tail = __atomic_load_n(&ring->roles[ring->n_role - 1].cursor, __ATOMIC_ACQUIRE);
     real = MIN(ring->cap - (head - tail), nums);
     if (real == 0) {
         return 0;
@@ -403,17 +445,22 @@ static INLINE int ring_spmro_read(struct ring_spmro *ring, int id, void *data[],
     uint32_t real = 0;
     uint32_t first = 0;
 
-    cur = ring->role[id].cursor;
-    prev = __atomic_load_n((id == 0) ? &ring->head : &ring->role[id - 1].cursor, __ATOMIC_ACQUIRE);
+    cur = __atomic_load_n(&ring->roles[id].cursor, __ATOMIC_RELAXED);
+    prev = __atomic_load_n((id == 0) ? &ring->head : &ring->roles[id - 1].cursor, __ATOMIC_ACQUIRE);
     real = MIN(prev - cur, max);
     if (real == 0) {
         return 0;
     }
 
     idx = cur & ring->mask;
-    first = (ring->cap -  idx, );
+    first = MIN(ring->cap -  idx, real);
+    memcpy(&data[0], &ring->data[idx], first * sizeof(void *));
+    if (real > first) {
+        memcpy(&data[first], &ring->data[0], (real - first) * sizeof(void *));
+    }
 
-    return 0;
+    __atomic_store_n(&ring->roles[id].cursor, cur + real, __ATOMIC_RELEASE);
+    return real;
 }
 
 #endif // __RING_H__

@@ -151,7 +151,7 @@ static void *reader_thread(void *arg)
         } else {
             // Span read: obtain span, traverse ring memory directly, then commit
             struct ring_span span;
-            ring_spsc_read_start(c->ring, &span);
+            ring_spsc_read_start(c->ring, &span, 100);
 
             if (span.total == 0) {
                 cpu_relax();
@@ -240,7 +240,7 @@ int main(int argc, char **argv)
     (void)argc; (void)argv;
 
     // Increase total for stress testing
-    const uint64_t total = 500ull * 1000 * 1000; // 500M items
+    const uint64_t total = 32ULL * 1000 * 1000 * 16; // items
 
     // Prepare data: values[i] = i
     g_values = (uint64_t *)malloc(sizeof(uint64_t) * total);

@@ -18,5 +18,19 @@ add_executable(test_ring
     test/test_ring.c
 )
 
+add_executable(test_ring_spmc
+    test/test_ring_spmc.c
+)
+
+add_executable(test_ring_mpsc
+    test/test_ring_mpsc.c
+)
+
 target_link_libraries(test_ring utils)
 target_link_libraries(test_ring pthread)
+
+target_link_libraries(test_ring_spmc utils)
+target_link_libraries(test_ring_spmc pthread)
+
+target_link_libraries(test_ring_mpsc utils)
+target_link_libraries(test_ring_mpsc pthread)

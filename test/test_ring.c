@@ -142,6 +142,16 @@ static void test_spmc_init_case(void)
     CHECK_EQ(ring->cap, cap, "test case1: cap", "SUCCESS", "FAILURE");
     CHECK_EQ(ring->mask, cap - 1, "test case 1: mask", "SUCCESS", "FAILURE");
     ring_spmc_fini(ring);
+
+    cap = 1;
+    CHECK_NE(ring = ring_spmc_init(cap), NULL, "test case2: ring_spmc_init 1", "SUCCESS", "FAILURE");
+    CHECK_EQ(ring->cap, cap, "test case2: cap", "SUCCESS", "FAILURE");
+    CHECK_EQ(ring->mask, cap - 1, "test case2: mask", "SUCCESS", "FAILURE");
+    ring_spmc_fini(ring);
+
+    cap = 1024 + 1;
+    CHECK_EQ(ring = ring_spmc_init(cap), NULL, "test case3: ring_spmc_init 1025", "SUCCESS", "FAILURE");
+    ring_spmc_fini(ring);
 }
 
 static void test_mpsc_init_case(void)

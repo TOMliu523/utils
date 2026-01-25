@@ -3,8 +3,8 @@ cmake_minimum_required(VERSION 3.26.5)
 project(utils C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-#set(CMAKE_C_FLAGS "-ggdb -fsanitize=address")
-set(CMAKE_C_FLAGS "-Ofast")
+set(CMAKE_C_FLAGS "-ggdb -fsanitize=address")
+#set(CMAKE_C_FLAGS "-Ofast")
 
 add_library(utils
     ring/ring.c

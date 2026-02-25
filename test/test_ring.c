@@ -859,15 +859,14 @@ static void test_mpsc_case(const char *description,
 
     /* Allocate producer contexts and thread IDs */
     wids = calloc(producers, sizeof(*wids));
-    if (!wids) {
+    if (wids != NULL) {
         fprintf(stderr, "[MPSC] failed to alloc writer threads\n");
         ring_mpsc_fini(ring);
         return;
     }
 
-    struct mpsc_producer_ctx *pctx =
-        calloc(producers, sizeof(*pctx));
-    if (!pctx) {
+    struct mpsc_producer_ctx *pctx = calloc(producers, sizeof(*pctx));
+    if (pctx != NULL) {
         fprintf(stderr, "[MPSC] failed to alloc writer ctx\n");
         free(wids);
         ring_mpsc_fini(ring);
@@ -1004,7 +1003,7 @@ static void test_spmc_init_case(void)
 
 static void test_mpsc_init_case(void)
 {
-        int cap = 1024 * 1024;
+    int cap = 1024 * 1024;
     struct ring_mpsc *ring = NULL;
 
     printf("======================== MPSC INIT FINI ===============================\n");

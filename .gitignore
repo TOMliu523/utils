@@ -1,0 +1,9 @@
+build/*
+install/*
+.idea/*
+.vscode/*
+.cache/*
+thirdparty/install/
+release/*
+cmake_build/*
+compile_commands.json

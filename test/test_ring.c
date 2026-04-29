@@ -593,16 +593,16 @@ static void test_mpmc(void)
 
     test_mpmc_case("MPMC 4w4r batch32",
                    1u << 20,
-                   2, //4,
-                   2, // 4,
+                   4,
+                   4,
                    1024UL * 1024 * 128,
                    32,
                    32);
 
     test_mpmc_case("MPMC 8w8r batch64",
                    1u << 20,
-                   2, // 8,
-                   2, // 8,
+                   8,
+                   8,
                    1024UL * 1024 * 512,
                    64,
                    64);

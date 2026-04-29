@@ -7,8 +7,6 @@
  * designed for concurrent systems, including the following variants:
  *
  *  - SPSC : Single Producer / Single Consumer
- *  - SPMC : Single Producer / Multi Consumer
- *  - MPSC : Multi Producer  / Single Consumer
  *  - MPMC : Multi Producer  / Multi Consumer
  *
  * Extended interfaces:
@@ -349,13 +347,9 @@ static INLINE int ring_mpmc_write(struct ring_mpmc *ring, void *data[], int nums
     }
 
     for (;;) {
-        uint32_t start = head;
-        if (__atomic_compare_exchange_n(&ring->writer.tail,
-                                        &start,
-                                        start + real,
-                                        true,
-                                        __ATOMIC_RELEASE,
-                                        __ATOMIC_RELAXED)) {
+        uint32_t cur = __atomic_load_n(&ring->writer.tail, __ATOMIC_ACQUIRE);
+        if (cur == head) {
+            __atomic_store_n(&ring->writer.tail, head + real, __ATOMIC_RELEASE);
             break;
         }
 
@@ -419,13 +413,9 @@ static INLINE int ring_mpmc_read(struct ring_mpmc *ring, void *data[], int max)
     }
 
     for (;;) {
-        uint32_t start = head;
-        if (__atomic_compare_exchange_n(&ring->reader.tail,
-                                        &start,
-                                        start + real,
-                                        true,
-                                        __ATOMIC_RELEASE,
-                                        __ATOMIC_RELAXED)) {
+        uint32_t cur = __atomic_load_n(&ring->reader.tail, __ATOMIC_ACQUIRE);
+        if (cur == head) {
+            __atomic_store_n(&ring->reader.tail, head + real, __ATOMIC_RELEASE);
             break;
         }
 

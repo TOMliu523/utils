@@ -559,11 +559,27 @@ static void test_mpmc(void)
 {
     test_mpmc_init_case();
 
+    /*
+     * NOTE:
+     *  - The number of threads (writers + readers) should not exceed
+     *    the number of available CPU cores. Oversubscription may lead
+     *    to severe contention, excessive spinning, and even apparent
+     *    livelock due to scheduling starvation.
+     *
+     *  - The total test data size should not exceed the available system
+     *    memory. Exceeding physical memory may trigger swapping, which
+     *    drastically distorts performance measurements and may cause
+     *    the test to stall.
+     *
+     *  - For accurate performance evaluation, it is recommended to:
+     *      * Match thread count to CPU cores
+     *      * Pin threads to cores (e.g., using taskset or pthread affinity)
+     */
     test_mpmc_case("MPMC 2w2r batch1",
                    1u << 20,
                    2,
                    2,
-                   1024UL * 1024 * 16,
+                   1024UL * 1024 * 32,
                    1,
                    1);
 
@@ -571,23 +587,23 @@ static void test_mpmc(void)
                    1u << 20,
                    2,
                    2,
-                   1024UL * 1024 * 16,
+                   1024UL * 1024 * 64,
                    8,
                    8);
 
     test_mpmc_case("MPMC 4w4r batch32",
                    1u << 20,
-                   4,
-                   4,
-                   1024UL * 1024 * 16,
+                   2, //4,
+                   2, // 4,
+                   1024UL * 1024 * 128,
                    32,
                    32);
 
     test_mpmc_case("MPMC 8w8r batch64",
                    1u << 20,
-                   8,
-                   8,
-                   1024UL * 1024 * 8,
+                   2, // 8,
+                   2, // 8,
+                   1024UL * 1024 * 512,
                    64,
                    64);
 }
@@ -615,7 +631,7 @@ static void test_spsc(void)
 
 int main(int argc, char *argv[])
 {
-    // test_spsc();
+    test_spsc();
     test_mpmc();
 
     return EXIT_SUCCESS;

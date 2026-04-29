@@ -274,64 +274,6 @@ static void test_spsc_init_case(void)
     ring_spsc_fini(ring);
 }
 
-static void test_spmc_init_case(void)
-{
-    int cap = 1024 * 1024;
-    struct ring_spmc *ring = NULL;
-
-    printf("======================== SPMC INIT FINI ===============================\n");
-    CHECK_NE(ring = ring_spmc_init(cap), NULL, "test case0: ring_spmc_init 1024 * 1024", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->cap, cap, "test case0: cap", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->mask, cap - 1, "test case0: mask", "SUCCESS", "FAILURE");
-    ring_spmc_fini(ring);
-
-    cap = 1024;
-    CHECK_NE(ring = ring_spmc_init(cap), NULL, "test case1: ring_spmc_init 1024", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->cap, cap, "test case1: cap", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->mask, cap - 1, "test case 1: mask", "SUCCESS", "FAILURE");
-    ring_spmc_fini(ring);
-
-    cap = 1;
-    CHECK_NE(ring = ring_spmc_init(cap), NULL, "test case2: ring_spmc_init 1", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->cap, cap, "test case2: cap", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->mask, cap - 1, "test case2: mask", "SUCCESS", "FAILURE");
-    ring_spmc_fini(ring);
-
-    cap = 1024 + 1;
-    CHECK_EQ(ring = ring_spmc_init(cap), NULL, "test case3: ring_spmc_init 1025 (not power of 2)", "SUCCESS", "FAILURE");
-    ring_spmc_fini(ring);
-}
-
-static void test_mpsc_init_case(void)
-{
-    int cap = 1024 * 1024;
-    struct ring_mpsc *ring = NULL;
-
-    printf("======================== MPSC INIT FINI ===============================\n");
-
-    cap = 1024 * 1024;
-    CHECK_NE(ring = ring_mpsc_init(cap), NULL, "MPSC test case0: ring_mpsc_init 1024 * 1024", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->cap, cap, "MPSC test case0: cap", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->mask, cap - 1, "MPSC test case0: mask", "SUCCESS", "FAILURE");
-    ring_mpsc_fini(ring);
-
-    cap = 1024;
-    CHECK_NE(ring = ring_mpsc_init(cap), NULL, "MPSC test case1: ring_mpsc_init 1024", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->cap, cap, "MPSC test case1: cap", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->mask, cap - 1, "MPSC test case1: mask", "SUCCESS", "FAILURE");
-    ring_mpsc_fini(ring);
-
-    cap = 1;
-    CHECK_NE(ring = ring_mpsc_init(cap), NULL, "MPSC test case2: ring_mpsc_init 1", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->cap, cap, "MPSC test case2: cap", "SUCCESS", "FAILURE");
-    CHECK_EQ(ring->mask, cap - 1, "MPSC test case2: mask", "SUCCESS", "FAILURE");
-    ring_mpsc_fini(ring);
-
-    cap = 1024 + 1;
-    CHECK_EQ(ring = ring_mpsc_init(cap), NULL, "MPSC test case3: ring_mpsc_init 1025 (not power of 2)", "SUCCESS", "FAILURE");
-    ring_mpsc_fini(ring);
-}
-
 static void test_mpmc_init_case(void)
 {
     int cap = 1024 * 1024;

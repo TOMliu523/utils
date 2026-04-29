@@ -61,4 +61,8 @@
 #define UNLIKELY(x) __builtin_expect(!!(x), 0)
 #endif // LIKELY
 
+#ifndef ARR_NUMS
+#define ARR_NUMS(x) (sizeof(x) / sizeof(x[0]))
+#endif // ARR_NUMS
+
 #endif // __MACRO_H__
